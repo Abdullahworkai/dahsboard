@@ -534,33 +534,98 @@ elif page == "✅ My Tasks":
             p_cls    = f"tag-{priority.lower()}"
             s_cls    = "tag-done" if status=="Done" else ("tag-inprog" if status=="In Progress" else "tag-todo")
             is_over  = due and status != "Done" and datetime.strptime(due, "%Y-%m-%d").date() < datetime.now().date()
-            oos      = " [OOS]" if t.get("project") == "Out of Scope" else ""
+            is_done  = status == "Done"
+            task_id  = t.get("id")
+            edit_key = f"edit_mode_{task_id}"
 
-            with st.expander(f"{'[!]' if is_over else ''} {t['title']}{oos} | {t.get('project','')}", expanded=False):
-                cols = st.columns([2,1])
-                with cols[0]:
-                    st.markdown(f"""
-                    <span class="tag {p_cls}">{priority}</span>
-                    <span class="tag {s_cls}">{status}</span>
-                    {"<span style='color:#ff8fab;font-size:0.8rem;margin-left:8px;'>Overdue</span>" if is_over else ""}
-                    <div style='margin-top:12px;color:#c4bce8;'>{t.get('description','') or '<em style="color:#7b72a8">No description</em>'}</div>
-                    """, unsafe_allow_html=True)
-                    if due: st.markdown(f"Due: **{due}**")
-                    st.markdown(f"Added: {t.get('created_at','')[:10]}")
-                with cols[1]:
-                    new_status = st.selectbox("Change Status", ["To Do","In Progress","Done"],
-                                              index=["To Do","In Progress","Done"].index(status),
-                                              key=f"st_{t['id']}")
-                    if new_status != status:
-                        idx = next((j for j,x in enumerate(tasks_data["tasks"]) if x.get("id")==t["id"]), None)
+            # ── Row: quick-done checkbox + title + tags ──
+            row_cols = st.columns([0.3, 4, 2, 1, 1])
+
+            # Checkbox to toggle Done instantly
+            checked = row_cols[0].checkbox(
+                "", value=is_done, key=f"chk_{task_id}",
+                help="Mark as Done / Undo"
+            )
+            if checked != is_done:
+                new_st = "Done" if checked else "To Do"
+                idx = next((j for j,x in enumerate(tasks_data["tasks"]) if x.get("id")==task_id), None)
+                if idx is not None:
+                    tasks_data["tasks"][idx]["status"] = new_st
+                    save_data("tasks", tasks_data)
+                    st.rerun()
+
+            # Title + tags
+            title_style = "text-decoration:line-through;color:#7b72a8;" if is_done else "color:#e8deff;font-weight:700;"
+            overdue_badge = " 🔴" if is_over else ""
+            row_cols[1].markdown(
+                f"<span style='{title_style}font-size:0.95rem;'>{t['title']}{overdue_badge}</span>"
+                f"&nbsp;<span class='tag {p_cls}'>{priority}</span>"
+                f"&nbsp;<span class='tag {s_cls}'>{status}</span>",
+                unsafe_allow_html=True
+            )
+
+            # Project + due date
+            due_display = f"📅 {due}" if due else ""
+            row_cols[2].markdown(
+                f"<div style='font-size:0.78rem;color:#7b72a8;margin-top:6px;'>📁 {t.get('project','')}</div>"
+                f"<div style='font-size:0.78rem;color:{'#ff8fab' if is_over else '#7b72a8'};'>{due_display}</div>",
+                unsafe_allow_html=True
+            )
+
+            # Edit button
+            if row_cols[3].button("✏️ Edit", key=f"editbtn_{task_id}"):
+                st.session_state[edit_key] = not st.session_state.get(edit_key, False)
+
+            # Delete button
+            if row_cols[4].button("🗑️", key=f"del_t_{task_id}"):
+                tasks_data["tasks"] = [x for x in tasks_data["tasks"] if x.get("id") != task_id]
+                save_data("tasks", tasks_data)
+                st.rerun()
+
+            # ── Inline edit form (shown when edit mode active) ──
+            if st.session_state.get(edit_key, False):
+                with st.form(key=f"edit_form_{task_id}"):
+                    st.markdown(f"<div style='font-size:0.8rem;color:#b79eff;font-weight:700;margin-bottom:8px;'>Editing: {t['title']}</div>", unsafe_allow_html=True)
+                    e1, e2 = st.columns(2)
+                    new_title   = e1.text_input("Title",   value=t.get("title",""))
+                    new_project = e2.selectbox("Project",  proj_names,
+                                               index=proj_names.index(t.get("project","Out of Scope"))
+                                               if t.get("project") in proj_names else 0)
+                    new_desc    = st.text_area("Description / Reflection",
+                                               value=t.get("description",""), height=80)
+                    f1, f2, f3  = st.columns(3)
+                    new_priority = f1.selectbox("Priority", ["High","Medium","Low"],
+                                                index=["High","Medium","Low"].index(t.get("priority","Medium")))
+                    new_status_e = f2.selectbox("Status", ["To Do","In Progress","Done"],
+                                                index=["To Do","In Progress","Done"].index(t.get("status","To Do")))
+                    current_due  = None
+                    if t.get("due_date"):
+                        try: current_due = datetime.strptime(t["due_date"], "%Y-%m-%d").date()
+                        except: pass
+                    new_due = f3.date_input("Due Date", value=current_due)
+
+                    sa, sb = st.columns(2)
+                    if sa.form_submit_button("💾 Save Changes"):
+                        idx = next((j for j,x in enumerate(tasks_data["tasks"]) if x.get("id")==task_id), None)
                         if idx is not None:
-                            tasks_data["tasks"][idx]["status"] = new_status
+                            tasks_data["tasks"][idx].update({
+                                "title":       new_title,
+                                "project":     new_project,
+                                "description": new_desc,
+                                "priority":    new_priority,
+                                "status":      new_status_e,
+                                "due_date":    str(new_due) if new_due else "",
+                                "updated_at":  str(datetime.now()),
+                            })
                             save_data("tasks", tasks_data)
+                            st.session_state[edit_key] = False
+                            st.success("Task updated!")
                             st.rerun()
-                    if st.button("Delete", key=f"del_t_{t['id']}"):
-                        tasks_data["tasks"] = [x for x in tasks_data["tasks"] if x.get("id")!=t["id"]]
-                        save_data("tasks", tasks_data)
+                    if sb.form_submit_button("Cancel"):
+                        st.session_state[edit_key] = False
                         st.rerun()
+
+            st.markdown("<hr style='margin:6px 0;border-color:#2e2848;'>", unsafe_allow_html=True)
 
 # ════════════════════════════════════════════════════════════════════════════
 # KANBAN
