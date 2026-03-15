@@ -5,6 +5,9 @@ import io
 import calendar
 from datetime import datetime, date
 from pathlib import Path
+import plotly.graph_objects as go
+import plotly.express as px
+import pandas as pd
 
 st.set_page_config(
     page_title="Abdullah's WorkOS",
@@ -192,7 +195,6 @@ with st.sidebar:
 # DASHBOARD
 # ════════════════════════════════════════════════════════════════════════════
 if page == "🎯 Dashboard":
-    import plotly.graph_objects as go
 
     now  = datetime.now()
     hour = now.hour
@@ -562,8 +564,6 @@ elif page == "🗂️ Kanban Board":
 # GANTT — uses plotly.express timeline (no scipy / figure_factory needed)
 # ════════════════════════════════════════════════════════════════════════════
 elif page == "📅 Gantt Chart":
-    import pandas as pd
-    import plotly.express as px
 
     st.markdown("<h1>Gantt Chart</h1>", unsafe_allow_html=True)
     tasks = tasks_data["tasks"]
@@ -676,9 +676,6 @@ elif page == "📓 My Notes":
 # REPORTS — only go/px, no figure_factory
 # ════════════════════════════════════════════════════════════════════════════
 elif page == "📊 Reports":
-    import pandas as pd
-    import plotly.graph_objects as go
-    import plotly.express as px
 
     st.markdown("<h1>Reports</h1>", unsafe_allow_html=True)
     tasks      = tasks_data["tasks"]
