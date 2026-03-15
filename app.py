@@ -8,6 +8,7 @@ from pathlib import Path
 import plotly.graph_objects as go
 import plotly.express as px
 import pandas as pd
+from supabase import create_client, Client
 
 st.set_page_config(
     page_title="Abdullah's WorkOS",
@@ -16,27 +17,66 @@ st.set_page_config(
     initial_sidebar_state="expanded",
 )
 
-# ── paths ─────────────────────────────────────────────────────────────────────
-DATA_DIR  = Path("data");  DATA_DIR.mkdir(exist_ok=True)
-NOTES_DIR = Path("notes"); NOTES_DIR.mkdir(exist_ok=True)
-OGSM_FILE     = DATA_DIR / "ogsm.json"
-TASKS_FILE    = DATA_DIR / "tasks.json"
-REQUESTS_FILE = DATA_DIR / "requests.json"
+# ── Supabase connection ───────────────────────────────────────────────────────
+@st.cache_resource
+def get_supabase() -> Client:
+    url = st.secrets["SUPABASE_URL"]
+    key = st.secrets["SUPABASE_KEY"]
+    return create_client(url, key)
 
-def load_json(path, default):
-    if path.exists():
-        with open(path) as f: return json.load(f)
+supabase = get_supabase()
+
+# ── Data helpers ──────────────────────────────────────────────────────────────
+def load_data(table: str, default: dict) -> dict:
+    try:
+        res = supabase.table(table).select("id, data").limit(1).execute()
+        if res.data:
+            return res.data[0]["data"]
+    except Exception as e:
+        st.warning(f"Could not load {table}: {e}")
     return default
 
-def save_json(path, data):
-    with open(path, "w") as f: json.dump(data, f, indent=2, default=str)
+def save_data(table: str, data: dict):
+    try:
+        res = supabase.table(table).select("id").limit(1).execute()
+        if res.data:
+            row_id = res.data[0]["id"]
+            supabase.table(table).update({"data": data}).eq("id", row_id).execute()
+        else:
+            supabase.table(table).insert({"data": data}).execute()
+    except Exception as e:
+        st.error(f"Could not save to {table}: {e}")
 
-def init_data():
-    if not OGSM_FILE.exists():     save_json(OGSM_FILE,     {"objectives": []})
-    if not TASKS_FILE.exists():    save_json(TASKS_FILE,    {"tasks": []})
-    if not REQUESTS_FILE.exists(): save_json(REQUESTS_FILE, {"requests": []})
+def load_notes() -> list:
+    try:
+        res = supabase.table("notes").select("*").order("created_at", desc=True).execute()
+        return res.data or []
+    except Exception as e:
+        st.warning(f"Could not load notes: {e}")
+        return []
 
-init_data()
+def save_note(project: str, title: str, content: str, tags: list):
+    try:
+        supabase.table("notes").insert({
+            "project": project,
+            "title":   title,
+            "content": content,
+            "tags":    tags,
+        }).execute()
+    except Exception as e:
+        st.error(f"Could not save note: {e}")
+
+def delete_note(note_id: str):
+    try:
+        supabase.table("notes").delete().eq("id", note_id).execute()
+    except Exception as e:
+        st.error(f"Could not delete note: {e}")
+
+# ── Load all data ─────────────────────────────────────────────────────────────
+ogsm_data     = load_data("ogsm",     {"objectives": []})
+tasks_data    = load_data("tasks",    {"tasks": []})
+requests_data = load_data("requests", {"requests": []})
+
 
 # ── LAVENDER THEME CSS ────────────────────────────────────────────────────────
 st.markdown("""
@@ -156,9 +196,6 @@ hr { border-color: var(--border) !important; margin: 24px 0 !important; }
 """, unsafe_allow_html=True)
 
 # ── load data ─────────────────────────────────────────────────────────────────
-ogsm_data     = load_json(OGSM_FILE,     {"objectives": []})
-tasks_data    = load_json(TASKS_FILE,    {"tasks": []})
-requests_data = load_json(REQUESTS_FILE, {"requests": []})
 
 pending_requests = [r for r in requests_data["requests"] if r.get("status") == "pending"]
 badge_count = len(pending_requests)
@@ -390,7 +427,7 @@ elif page == "📋 My OGSM":
                         "created_at": str(datetime.now().date())
                     })
                     ogsm_data["objectives"] = objectives
-                    save_json(OGSM_FILE, ogsm_data)
+                    save_data("ogsm", ogsm_data)
                     st.success(f"Project '{name}' added to your OGSM!")
                     st.rerun()
                 else:
@@ -429,7 +466,7 @@ elif page == "📋 My OGSM":
                 if st.button(f"Delete '{obj['name']}'", key=f"del_{i}"):
                     objectives.pop(i)
                     ogsm_data["objectives"] = objectives
-                    save_json(OGSM_FILE, ogsm_data)
+                    save_data("ogsm", ogsm_data)
                     st.rerun()
     else:
         st.info("No projects yet. Add your first OGSM project above!")
@@ -469,7 +506,7 @@ elif page == "✅ My Tasks":
                         "created_at":  str(datetime.now()),
                     })
                     tasks_data["tasks"] = tasks
-                    save_json(TASKS_FILE, tasks_data)
+                    save_data("tasks", tasks_data)
                     st.success(f"Task '{title}' added successfully!")
                     st.rerun()
                 else:
@@ -518,11 +555,11 @@ elif page == "✅ My Tasks":
                         idx = next((j for j,x in enumerate(tasks_data["tasks"]) if x.get("id")==t["id"]), None)
                         if idx is not None:
                             tasks_data["tasks"][idx]["status"] = new_status
-                            save_json(TASKS_FILE, tasks_data)
+                            save_data("tasks", tasks_data)
                             st.rerun()
                     if st.button("Delete", key=f"del_t_{t['id']}"):
                         tasks_data["tasks"] = [x for x in tasks_data["tasks"] if x.get("id")!=t["id"]]
-                        save_json(TASKS_FILE, tasks_data)
+                        save_data("tasks", tasks_data)
                         st.rerun()
 
 # ════════════════════════════════════════════════════════════════════════════
@@ -634,30 +671,18 @@ elif page == "📓 My Notes":
             tags    = st.text_input("Tags (comma separated)", placeholder="e.g. meeting, q2")
             if st.form_submit_button("Save Note"):
                 if title and content:
-                    folder = NOTES_DIR / proj.replace(" ","_").replace("/","_")
-                    folder.mkdir(exist_ok=True)
-                    note = {"title": title, "project": proj, "content": content,
-                            "tags": [x.strip() for x in tags.split(",") if x.strip()],
-                            "created_at": str(datetime.now())}
-                    fname = f"{datetime.now().strftime('%Y%m%d_%H%M%S')}_{title[:20].replace(' ','_')}.json"
-                    with open(folder / fname, "w") as f: json.dump(note, f, indent=2)
+                    tag_list = [x.strip() for x in tags.split(",") if x.strip()]
+                    save_note(proj, title, content, tag_list)
                     st.success(f"Note saved to '{proj}' folder!")
                     st.rerun()
                 else:
                     st.error("Title and content are required.")
 
     with tab2:
-        sel_proj = st.selectbox("Project Folder", ["All"] + proj_names, key="note_proj")
-        all_notes = []
-        for folder in NOTES_DIR.iterdir():
-            if folder.is_dir():
-                for f in folder.glob("*.json"):
-                    try:
-                        n = json.load(open(f)); n["_file"] = str(f); all_notes.append(n)
-                    except: pass
+        sel_proj  = st.selectbox("Project Folder", ["All"] + proj_names, key="note_proj")
+        all_notes = load_notes()
         if sel_proj != "All":
             all_notes = [n for n in all_notes if n.get("project") == sel_proj]
-        all_notes.sort(key=lambda x: x.get("created_at",""), reverse=True)
         search = st.text_input("Search notes", placeholder="keyword...")
         if search:
             all_notes = [n for n in all_notes
@@ -665,12 +690,17 @@ elif page == "📓 My Notes":
                          or search.lower() in n.get("content","").lower()]
         st.markdown(f"<div style='color:#7b72a8;font-size:0.85rem;margin:8px 0;'>{len(all_notes)} note(s)</div>", unsafe_allow_html=True)
         for note in all_notes:
-            with st.expander(f"{note['title']}  |  {note.get('project','')}  |  {note.get('created_at','')[:10]}"):
+            created = note.get("created_at","")[:10]
+            with st.expander(f"{note['title']}  |  {note.get('project','')}  |  {created}"):
                 st.markdown(note["content"])
-                if note.get("tags"):
-                    st.markdown(" ".join([f"<span class='tag tag-todo'>{tg}</span>" for tg in note["tags"]]), unsafe_allow_html=True)
-                if st.button("Delete Note", key=f"dn_{note['_file']}"):
-                    os.remove(note["_file"]); st.rerun()
+                tags_val = note.get("tags") or []
+                if isinstance(tags_val, str):
+                    try: tags_val = json.loads(tags_val)
+                    except: tags_val = []
+                if tags_val:
+                    st.markdown(" ".join([f"<span class='tag tag-todo'>{tg}</span>" for tg in tags_val]), unsafe_allow_html=True)
+                if st.button("Delete Note", key=f"dn_{note['id']}"):
+                    delete_note(note["id"]); st.rerun()
 
 # ════════════════════════════════════════════════════════════════════════════
 # REPORTS — only go/px, no figure_factory
@@ -867,18 +897,18 @@ elif "Inbox" in page:
                         "created_at": str(datetime.now()),
                         "source": f"Request from {r.get('requester_name','')}",
                     })
-                    save_json(TASKS_FILE, tasks_data)
+                    save_data("tasks", tasks_data)
                     idx = next((j for j,x in enumerate(requests_data["requests"]) if x.get("submitted_at")==r.get("submitted_at")), None)
                     if idx is not None:
                         requests_data["requests"][idx]["status"] = "accepted"
-                        save_json(REQUESTS_FILE, requests_data)
+                        save_data("requests", requests_data)
                     st.success("Task added!")
                     st.rerun()
                 if st.button("Dismiss", key=f"dis_{i}"):
                     idx = next((j for j,x in enumerate(requests_data["requests"]) if x.get("submitted_at")==r.get("submitted_at")), None)
                     if idx is not None:
                         requests_data["requests"][idx]["status"] = "dismissed"
-                        save_json(REQUESTS_FILE, requests_data)
+                        save_data("requests", requests_data)
                     st.rerun()
 
     if archived:
@@ -926,7 +956,7 @@ elif page == "🔗 Request a Task":
                     "status":          "pending",
                     "submitted_at":    str(datetime.now()),
                 })
-                save_json(REQUESTS_FILE, requests_data)
+                save_data("requests", requests_data)
                 st.success("Request submitted! Abdullah will review it shortly.")
                 st.balloons()
             else:
