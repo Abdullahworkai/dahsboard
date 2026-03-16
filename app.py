@@ -606,18 +606,35 @@ elif page == "✅ My Tasks":
 
     with tab2:
         f1,f2,f3,f4 = st.columns(4)
-        f_proj   = f1.selectbox("Project",  ["All"] + proj_names, key="fp")
-        f_status = f2.selectbox("Status",   ["All","To Do","In Progress","Done"], key="fs")
+        proj_filter_opts = ["My OGSM Tasks"] + proj_names + ["Out of Scope"]
+        f_proj   = f1.selectbox("Project",  proj_filter_opts, key="fp")
+        f_status = f2.selectbox("Status",   ["All","To Do","In Progress"], key="fs")
         f_prio   = f3.selectbox("Priority", ["All","High","Medium","Low"], key="fpr")
         f_search = f4.text_input("Search", placeholder="keyword...", key="fsrch")
 
-        filtered = tasks
-        if f_proj   != "All": filtered = [t for t in filtered if t.get("project")  == f_proj]
+        # Default: hide Out of Scope and Done tasks
+        ogsm_proj_names = [o["name"] for o in ogsm_data.get("objectives", [])]
+        if f_proj == "My OGSM Tasks":
+            filtered = [t for t in tasks if t.get("project") in ogsm_proj_names]
+        elif f_proj == "Out of Scope":
+            filtered = [t for t in tasks if t.get("project") == "Out of Scope"]
+        else:
+            filtered = [t for t in tasks if t.get("project") == f_proj]
+
+        # Always exclude Done from this view (they live in Completed tab)
+        filtered = [t for t in filtered if t.get("status") != "Done"]
+
         if f_status != "All": filtered = [t for t in filtered if t.get("status")   == f_status]
         if f_prio   != "All": filtered = [t for t in filtered if t.get("priority") == f_prio]
         if f_search:          filtered = [t for t in filtered if f_search.lower()  in t.get("title","").lower()]
 
-        st.markdown(f"<div style='color:#7b72a8;margin:10px 0;font-size:0.85rem;'>{len(filtered)} task(s)</div>", unsafe_allow_html=True)
+        oos_count = len([t for t in tasks if t.get("project") == "Out of Scope" and t.get("status") != "Done"])
+        st.markdown(
+            f"<div style='color:#7b72a8;margin:10px 0;font-size:0.85rem;'>{len(filtered)} task(s)"
+            f"{'&nbsp;&nbsp;·&nbsp;&nbsp;<span style=\"color:#c084fc;\">📦 ' + str(oos_count) + ' Out of Scope tasks hidden</span>' if f_proj == 'My OGSM Tasks' and oos_count else ''}"
+            f"</div>",
+            unsafe_allow_html=True
+        )
 
         for i, t in enumerate(sorted(filtered, key=lambda x: x.get("created_at",""), reverse=True)):
             priority = t.get("priority","Medium")
