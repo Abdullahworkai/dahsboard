@@ -1050,9 +1050,9 @@ elif page == "📆 Calendar":
     c1, c2 = st.columns(2)
     sel_month = c1.selectbox("Month", list(range(1,13)), index=now.month-1,
                               format_func=lambda m: calendar.month_name[m])
-    sel_year  = c2.number_input("Year", 2024, 2030, now.year)
+    sel_year  = int(c2.number_input("Year", 2024, 2030, now.year))
 
-    cal = calendar.monthcalendar(sel_year, sel_month)
+    # Build tasks-per-day lookup
     days_with_tasks = {}
     for t in tasks:
         due = t.get("due_date","")
@@ -1063,43 +1063,73 @@ elif page == "📆 Calendar":
                     days_with_tasks.setdefault(d.day, []).append(t)
             except: pass
 
-    dn = ["Mon","Tue","Wed","Thu","Fri","Sat","Sun"]
-    hdr = "".join([f"<th style='padding:8px;color:#7b72a8;font-size:0.78rem;text-transform:uppercase;'>{d}</th>" for d in dn])
-    rows = ""
-    for week in cal:
-        rows += "<tr>"
-        for day in week:
-            if day == 0:
-                rows += "<td style='padding:4px;'></td>"
-            else:
-                tlist = days_with_tasks.get(day,[])
-                dots  = ""
-                for t in tlist[:3]:
-                    pc = {"High":"#ff8fab","Medium":"#ffd97d","Low":"#72efb0"}.get(t.get("priority",""),"#b79eff")
-                    dots += f"<div style='font-size:0.65rem;color:{pc};overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:88px;'>• {t['title'][:16]}</div>"
-                if len(tlist) > 3: dots += f"<div style='font-size:0.62rem;color:#7b72a8;'>+{len(tlist)-3} more</div>"
-                is_today = (day==now.day and sel_month==now.month and sel_year==now.year)
-                bg     = "#2a2540" if is_today else "#1a1726"
-                border = "2px solid #b79eff" if is_today else "1px solid #2e2848"
-                day_color = "color:#b79eff;" if is_today else "color:#ede9ff;"
-                rows += f"""<td style='vertical-align:top;padding:4px;'>
-                    <div style='background:{bg};border:{border};border-radius:10px;padding:8px;min-height:72px;min-width:88px;'>
-                        <div style='font-weight:700;font-size:0.82rem;margin-bottom:4px;{day_color}'>{day}</div>
-                        {dots}
-                    </div></td>"""
-        rows += "</tr>"
+    st.markdown(f"### {calendar.month_name[sel_month]} {sel_year}")
+    st.markdown("<div style='color:#7b72a8;font-size:0.75rem;margin-bottom:12px;'>🔴 High &nbsp; 🟡 Medium &nbsp; 🟢 Low priority</div>", unsafe_allow_html=True)
 
-    st.markdown(f"""
-    <div style='overflow-x:auto;'>
-    <table style='width:100%;border-collapse:separate;border-spacing:3px;'>
-        <thead><tr>{hdr}</tr></thead>
-        <tbody>{rows}</tbody>
-    </table>
-    </div>
-    <div style='color:#7b72a8;font-size:0.75rem;margin-top:14px;'>
-        Red = High priority &nbsp;&nbsp; Yellow = Medium &nbsp;&nbsp; Green = Low
-    </div>
-    """, unsafe_allow_html=True)
+    # Day headers
+    day_names = ["Mon","Tue","Wed","Thu","Fri","Sat","Sun"]
+    hcols = st.columns(7)
+    for i, dn in enumerate(day_names):
+        hcols[i].markdown(f"<div style='text-align:center;font-size:0.72rem;color:#7b72a8;font-weight:700;text-transform:uppercase;letter-spacing:0.08em;padding-bottom:6px;'>{dn}</div>", unsafe_allow_html=True)
+
+    # Weeks
+    cal_weeks = calendar.monthcalendar(sel_year, sel_month)
+    for week in cal_weeks:
+        wcols = st.columns(7)
+        for i, day in enumerate(week):
+            with wcols[i]:
+                if day == 0:
+                    st.markdown("<div style='min-height:80px;'></div>", unsafe_allow_html=True)
+                else:
+                    tlist    = days_with_tasks.get(day, [])
+                    is_today = (day == now.day and sel_month == now.month and sel_year == now.year)
+                    border_c = "#b79eff" if is_today else "#2e2848"
+                    bg_c     = "#2a2540" if is_today else "#1a1726"
+                    day_c    = "#b79eff" if is_today else "#e8deff"
+                    num_style = f"font-weight:800;font-size:0.85rem;color:{day_c};margin-bottom:4px;"
+
+                    task_lines = ""
+                    for t in tlist[:2]:
+                        pc = {"High":"#ff8fab","Medium":"#ffd97d","Low":"#72efb0"}.get(t.get("priority",""),"#b79eff")
+                        task_lines += f"<div style='font-size:0.62rem;color:{pc};white-space:nowrap;overflow:hidden;text-overflow:ellipsis;'>• {t['title'][:14]}</div>"
+                    if len(tlist) > 2:
+                        task_lines += f"<div style='font-size:0.6rem;color:#7b72a8;'>+{len(tlist)-2} more</div>"
+
+                    st.markdown(
+                        f"<div style='background:{bg_c};border:1px solid {border_c};border-radius:10px;"
+                        f"padding:6px 8px;min-height:80px;'>"
+                        f"<div style='{num_style}'>{day}</div>"
+                        f"{task_lines}"
+                        f"</div>",
+                        unsafe_allow_html=True
+                    )
+        st.markdown("<div style='margin-bottom:4px;'></div>", unsafe_allow_html=True)
+
+    # Day detail — click a date to see full task list
+    st.markdown("---")
+    st.markdown("### Tasks by Day")
+    if days_with_tasks:
+        day_sel = st.selectbox(
+            "Select a day to see tasks",
+            sorted(days_with_tasks.keys()),
+            format_func=lambda d: f"{calendar.month_name[sel_month]} {d}, {sel_year} — {len(days_with_tasks[d])} task(s)"
+        )
+        for t in days_with_tasks[day_sel]:
+            priority = t.get("priority","Medium")
+            status   = t.get("status","To Do")
+            p_cls    = f"tag-{priority.lower()}"
+            s_cls    = "tag-done" if status=="Done" else ("tag-inprog" if status=="In Progress" else "tag-todo")
+            st.markdown(
+                f"<div class='card' style='padding:12px 18px;'>"
+                f"<span style='color:#e8deff;font-weight:700;'>{t['title']}</span>&nbsp;&nbsp;"
+                f"<span class='tag {p_cls}'>{priority}</span>"
+                f"<span class='tag {s_cls}'>{status}</span>"
+                f"<span style='color:#7b72a8;font-size:0.78rem;margin-left:8px;'>📁 {t.get('project','')}</span>"
+                f"</div>",
+                unsafe_allow_html=True
+            )
+    else:
+        st.info(f"No tasks with due dates in {calendar.month_name[sel_month]} {sel_year}.")
 
 # ════════════════════════════════════════════════════════════════════════════
 # INBOX
