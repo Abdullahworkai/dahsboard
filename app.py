@@ -572,7 +572,8 @@ elif page == "✅ My Tasks":
     proj_names = [o["name"] for o in objectives] + ["Out of Scope"]
     tasks = tasks_data["tasks"]
 
-    tab1, tab2 = st.tabs(["Add Task", "All Tasks"])
+    done_count = len([t for t in tasks if t.get("status") == "Done"])
+    tab1, tab2, tab3 = st.tabs(["Add Task", "All Tasks", f"Completed ({done_count})"])
 
     with tab1:
         with st.form("add_task"):
@@ -717,6 +718,72 @@ elif page == "✅ My Tasks":
                         st.rerun()
 
             st.markdown("<hr style='margin:6px 0;border-color:#2e2848;'>", unsafe_allow_html=True)
+
+
+    with tab3:
+        st.markdown("<div style='color:#7b72a8;margin-bottom:16px;font-size:0.88rem;'>All tasks you have marked as Done — your work log for the year.</div>", unsafe_allow_html=True)
+
+        completed = [t for t in tasks if t.get("status") == "Done"]
+
+        # Filters
+        cf1, cf2, cf3 = st.columns(3)
+        c_proj   = cf1.selectbox("Filter by Project", ["All"] + proj_names, key="cp")
+        c_prio   = cf2.selectbox("Filter by Priority", ["All","High","Medium","Low"], key="cpr")
+        c_search = cf3.text_input("Search", placeholder="keyword...", key="csrch")
+
+        if c_proj   != "All": completed = [t for t in completed if t.get("project") == c_proj]
+        if c_prio   != "All": completed = [t for t in completed if t.get("priority") == c_prio]
+        if c_search:          completed = [t for t in completed if c_search.lower() in t.get("title","").lower()]
+
+        completed = sorted(completed, key=lambda x: x.get("updated_at") or x.get("created_at",""), reverse=True)
+
+        st.markdown(f"<div style='color:#72efb0;font-size:0.85rem;margin-bottom:12px;'>🎉 {len(completed)} completed task(s)</div>", unsafe_allow_html=True)
+
+        if not completed:
+            st.info("No completed tasks yet. Keep going, Abdullah!")
+        else:
+            for t in completed:
+                priority  = t.get("priority","Medium")
+                p_cls     = f"tag-{priority.lower()}"
+                proj      = t.get("project","—")
+                due       = t.get("due_date","")
+                done_date = (t.get("updated_at") or t.get("created_at",""))[:10]
+                desc      = t.get("description","")
+                task_id   = t.get("id")
+
+                with st.expander(f"✅  {t['title']}  ·  {proj}"):
+                    ca, cb = st.columns([3,1])
+                    with ca:
+                        st.markdown(
+                            f"<span class='tag {p_cls}'>{priority}</span>"
+                            f"<span class='tag tag-done' style='margin-left:4px;'>Done</span>",
+                            unsafe_allow_html=True
+                        )
+                        if desc:
+                            st.markdown(f"<div style='margin-top:10px;color:#c4bce8;'>{desc}</div>", unsafe_allow_html=True)
+                        else:
+                            st.markdown("<div style='margin-top:10px;color:#7b72a8;font-style:italic;font-size:0.85rem;'>No reflection added</div>", unsafe_allow_html=True)
+                    with cb:
+                        st.markdown(
+                            f"<div style='background:#1a1726;border:1px solid #2e2848;border-radius:12px;padding:12px;text-align:center;'>"
+                            f"<div style='font-size:0.7rem;color:#7b72a8;text-transform:uppercase;letter-spacing:0.08em;'>Completed</div>"
+                            f"<div style='font-weight:700;color:#72efb0;font-size:0.95rem;margin-top:4px;'>{done_date}</div>"
+                            f"{'<div style=\'font-size:0.72rem;color:#7b72a8;margin-top:4px;\'>Due was ' + due + '</div>' if due else ''}"
+                            f"</div>",
+                            unsafe_allow_html=True
+                        )
+                    # Allow undo + delete
+                    bu1, bu2 = st.columns(2)
+                    if bu1.button("↩️ Undo (back to To Do)", key=f"undo_{task_id}"):
+                        idx = next((j for j,x in enumerate(tasks_data["tasks"]) if x.get("id")==task_id), None)
+                        if idx is not None:
+                            tasks_data["tasks"][idx]["status"] = "To Do"
+                            save_data("tasks", tasks_data)
+                            st.rerun()
+                    if bu2.button("🗑️ Delete", key=f"del_done_{task_id}"):
+                        tasks_data["tasks"] = [x for x in tasks_data["tasks"] if x.get("id") != task_id]
+                        save_data("tasks", tasks_data)
+                        st.rerun()
 
 # ════════════════════════════════════════════════════════════════════════════
 # KANBAN
