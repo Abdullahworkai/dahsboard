@@ -280,13 +280,16 @@ if page == "🎯 Dashboard":
 
     st.markdown("---")
 
-    left, right = st.columns(2)
+    # ── ROW 2: OGSM compact scroll (left) + bar chart (right) ──
+    left, right = st.columns([1, 1])
 
     with left:
         st.markdown("<h3>My OGSM Progress</h3>", unsafe_allow_html=True)
         if not objectives:
             st.info("Add OGSM projects in **My OGSM** to see progress here.")
         else:
+            # Scrollable container showing max 5 visible rows
+            rows_html = ""
             for obj in objectives:
                 obj_tasks = [t for t in tasks if t.get("project") == obj["name"]]
                 done_n  = len([t for t in obj_tasks if t.get("status") == "Done"])
@@ -294,24 +297,35 @@ if page == "🎯 Dashboard":
                 remain  = total_n - done_n
                 pct     = int((done_n / total_n * 100) if total_n else 0)
                 col_color = obj.get("color","#b79eff")
-                st.markdown(f"""
-                <div class="card" style="padding:14px 18px;border-left:3px solid {col_color};">
+                bar_filled = f"width:{pct}%;background:linear-gradient(90deg,{col_color}88,{col_color});height:4px;border-radius:999px;"
+                bar_empty  = "width:100%;background:#2e2848;height:4px;border-radius:999px;position:relative;"
+                rows_html += f"""
+                <div style='background:#221e32;border:1px solid #2e2848;border-left:3px solid {col_color};
+                            border-radius:12px;padding:12px 16px;margin-bottom:8px;'>
                     <div style='display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;'>
-                        <span style='font-weight:700;color:#e8deff;'>{obj['name']}</span>
+                        <span style='font-weight:700;color:#e8deff;font-size:0.9rem;'>{obj['name']}</span>
                         <span style='font-size:0.82rem;color:{col_color};font-weight:700;'>{pct}%</span>
                     </div>
-                    <div style='font-size:0.75rem;color:#7b72a8;margin-bottom:8px;'>{done_n} done &nbsp;·&nbsp; {remain} remaining &nbsp;·&nbsp; {total_n} total</div>
-                </div>""", unsafe_allow_html=True)
-                st.progress(pct / 100)
+                    <div style='{bar_empty}'><div style='{bar_filled}'></div></div>
+                    <div style='font-size:0.72rem;color:#7b72a8;margin-top:6px;'>
+                        ✅ {done_n} done &nbsp;·&nbsp; 🔄 {remain} left &nbsp;·&nbsp; {total_n} total
+                    </div>
+                </div>"""
+            # Wrap in scroll div — shows 5 rows (~72px each) then scrolls
+            st.markdown(f"""
+            <div style='max-height:420px;overflow-y:auto;padding-right:4px;
+                        scrollbar-width:thin;scrollbar-color:#2e2848 transparent;'>
+                {rows_html}
+            </div>""", unsafe_allow_html=True)
 
     with right:
-        st.markdown("<h3>Tasks Remaining by Project</h3>", unsafe_allow_html=True)
+        st.markdown("<h3>Tasks by Project</h3>", unsafe_allow_html=True)
         proj_labels, proj_done_vals, proj_remain_vals = [], [], []
         for obj in objectives:
             obj_tasks = [t for t in tasks if t.get("project") == obj["name"]]
             d = len([t for t in obj_tasks if t.get("status") == "Done"])
             r = len(obj_tasks) - d
-            proj_labels.append(obj["name"][:18])
+            proj_labels.append(obj["name"][:14])
             proj_done_vals.append(d)
             proj_remain_vals.append(r)
         oos = [t for t in tasks if t.get("project") == "Out of Scope"]
@@ -320,7 +334,6 @@ if page == "🎯 Dashboard":
             proj_labels.append("Out of Scope")
             proj_done_vals.append(oos_d)
             proj_remain_vals.append(len(oos) - oos_d)
-
         if proj_labels:
             fig = go.Figure()
             fig.add_trace(go.Bar(name="Done",      x=proj_labels, y=proj_done_vals,
@@ -329,13 +342,11 @@ if page == "🎯 Dashboard":
                                  marker_color="#b79eff", marker_line_width=0))
             fig.update_layout(
                 barmode="stack",
-                paper_bgcolor="rgba(0,0,0,0)",
-                plot_bgcolor="rgba(0,0,0,0)",
+                paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
                 font=dict(color="#ede9ff", family="Plus Jakarta Sans"),
-                margin=dict(t=10, b=40, l=10, r=10),
-                height=320,
+                margin=dict(t=10, b=60, l=10, r=10), height=340,
                 legend=dict(orientation="h", y=1.06, font=dict(size=11)),
-                xaxis=dict(color="#7b72a8", gridcolor="#2e2848"),
+                xaxis=dict(color="#7b72a8", gridcolor="#2e2848", tickangle=-30),
                 yaxis=dict(color="#7b72a8", gridcolor="#2e2848"),
             )
             st.plotly_chart(fig, use_container_width=True)
@@ -343,7 +354,9 @@ if page == "🎯 Dashboard":
             st.info("Add tasks to projects to see this chart.")
 
     st.markdown("---")
-    st.markdown("<h3>Upcoming Deadlines</h3>", unsafe_allow_html=True)
+
+    # ── ROW 3: Upcoming deadlines with action buttons ──
+    st.markdown("<h3>⏰ Upcoming Deadlines</h3>", unsafe_allow_html=True)
     upcoming = sorted(
         [t for t in tasks if t.get("due_date") and t.get("status") != "Done"],
         key=lambda x: x["due_date"]
@@ -352,48 +365,113 @@ if page == "🎯 Dashboard":
     if not upcoming:
         st.success("No upcoming deadlines — all clear, Abdullah!")
     else:
-        dcols = st.columns(4)
+        dcols = st.columns(len(upcoming))
         for i, t in enumerate(upcoming):
             due_d     = datetime.strptime(t["due_date"], "%Y-%m-%d").date()
             days_left = (due_d - today).days
             color     = "#ff8fab" if days_left <= 3 else ("#ffd97d" if days_left <= 7 else "#b79eff")
-            if days_left < 0:
-                urgency = "Overdue!"
-            elif days_left == 0:
-                urgency = "Due today!"
-            else:
-                urgency = f"{days_left} day(s) left"
+            urgency   = "Overdue!" if days_left < 0 else ("Due today!" if days_left == 0 else f"{days_left}d left")
+            task_id   = t.get("id")
+            edit_key  = f"dash_edit_{task_id}"
+
             with dcols[i]:
                 st.markdown(f"""
-                <div class="card" style="padding:14px;border-top:3px solid {color};text-align:center;">
-                    <div style='font-size:0.73rem;color:#7b72a8;margin-bottom:6px;'>{t.get('project','')[:20]}</div>
-                    <div style='font-weight:700;color:#e8deff;font-size:0.88rem;margin-bottom:8px;'>{t['title'][:28]}</div>
-                    <div style='color:{color};font-weight:700;font-size:0.85rem;'>{urgency}</div>
-                    <div style='font-size:0.72rem;color:#7b72a8;margin-top:4px;'>{t["due_date"]}</div>
+                <div style='background:#221e32;border:1px solid #2e2848;border-top:3px solid {color};
+                            border-radius:14px;padding:14px;text-align:center;margin-bottom:8px;'>
+                    <div style='font-size:0.7rem;color:#7b72a8;margin-bottom:4px;'>{t.get('project','')[:22]}</div>
+                    <div style='font-weight:700;color:#e8deff;font-size:0.88rem;margin-bottom:6px;'>{t['title'][:26]}</div>
+                    <div style='color:{color};font-weight:700;font-size:0.82rem;'>{urgency}</div>
+                    <div style='font-size:0.7rem;color:#7b72a8;margin-top:3px;'>{t["due_date"]}</div>
                 </div>""", unsafe_allow_html=True)
 
+                # Action buttons
+                btn1, btn2 = st.columns(2)
+                if btn1.button("✅ Done", key=f"dash_done_{task_id}"):
+                    idx = next((j for j,x in enumerate(tasks_data["tasks"]) if x.get("id")==task_id), None)
+                    if idx is not None:
+                        tasks_data["tasks"][idx]["status"] = "Done"
+                        save_data("tasks", tasks_data)
+                        st.rerun()
+                if btn2.button("✏️ Edit", key=f"dash_editbtn_{task_id}"):
+                    st.session_state[edit_key] = not st.session_state.get(edit_key, False)
+
+                # Inline edit form
+                if st.session_state.get(edit_key, False):
+                    with st.form(key=f"dash_form_{task_id}"):
+                        new_title = st.text_input("Title", value=t.get("title",""))
+                        new_due   = st.date_input("New Due Date",
+                                                  value=datetime.strptime(t["due_date"],"%Y-%m-%d").date()
+                                                  if t.get("due_date") else None)
+                        new_prio  = st.selectbox("Priority", ["High","Medium","Low"],
+                                                 index=["High","Medium","Low"].index(t.get("priority","Medium")))
+                        new_stat  = st.selectbox("Status", ["To Do","In Progress","Done"],
+                                                 index=["To Do","In Progress","Done"].index(t.get("status","To Do")))
+                        s1, s2 = st.columns(2)
+                        if s1.form_submit_button("💾 Save"):
+                            idx = next((j for j,x in enumerate(tasks_data["tasks"]) if x.get("id")==task_id), None)
+                            if idx is not None:
+                                tasks_data["tasks"][idx].update({
+                                    "title":    new_title,
+                                    "due_date": str(new_due) if new_due else "",
+                                    "priority": new_prio,
+                                    "status":   new_stat,
+                                    "updated_at": str(datetime.now()),
+                                })
+                                save_data("tasks", tasks_data)
+                                st.session_state[edit_key] = False
+                                st.success("Updated!")
+                                st.rerun()
+                        if s2.form_submit_button("Cancel"):
+                            st.session_state[edit_key] = False
+                            st.rerun()
+
     st.markdown("---")
-    st.markdown("<h3>Recently Added Tasks</h3>", unsafe_allow_html=True)
-    recent = sorted(tasks, key=lambda x: x.get("created_at",""), reverse=True)[:6]
-    if not recent:
-        st.info("No tasks yet. Head to **My Tasks** to add some.")
-    for t in recent:
-        priority = t.get("priority","Medium")
-        status   = t.get("status","To Do")
-        p_cls = f"tag-{priority.lower()}"
-        s_cls = "tag-done" if status=="Done" else ("tag-inprog" if status=="In Progress" else "tag-todo")
-        proj  = t.get("project","")
-        scope_badge = '<span class="tag tag-scope">OOS</span>' if proj == "Out of Scope" else ""
-        st.markdown(f"""
-        <div class="card" style="padding:12px 18px;">
-            <span style='color:#e8deff;font-weight:700;font-size:0.95rem;'>{t['title']}</span>
-            &nbsp;&nbsp;
-            <span class="tag {p_cls}">{priority}</span>
-            <span class="tag {s_cls}">{status}</span>
-            {scope_badge}
-            <span style='color:#7b72a8;font-size:0.78rem;margin-left:8px;'>📁 {proj}</span>
-            {f"<span style='color:#ff8fab;font-size:0.78rem;margin-left:8px;'>📅 {t.get('due_date','')}</span>" if t.get('due_date') else ''}
+
+    # ── ROW 4: Compact recent tasks (5 max) + link to full list ──
+    st.markdown("<h3>🕐 Active Tasks</h3>", unsafe_allow_html=True)
+
+    active = [t for t in tasks if t.get("status") != "Done"]
+    active_sorted = sorted(active, key=lambda x: (x.get("due_date","9999"), x.get("created_at","")))[:5]
+
+    if not active_sorted:
+        st.success("All tasks are done — great work, Abdullah! 🎉")
+    else:
+        # Header row
+        st.markdown("""
+        <div style='display:grid;grid-template-columns:3fr 1.5fr 1fr 1fr;gap:8px;
+                    padding:6px 12px;font-size:0.7rem;color:#7b72a8;
+                    text-transform:uppercase;letter-spacing:0.08em;border-bottom:1px solid #2e2848;margin-bottom:4px;'>
+            <div>Task</div><div>Project</div><div>Priority</div><div>Due</div>
         </div>""", unsafe_allow_html=True)
+
+        for t in active_sorted:
+            priority  = t.get("priority","Medium")
+            due       = t.get("due_date","")
+            p_cls     = f"tag-{priority.lower()}"
+            task_id   = t.get("id")
+            is_over   = due and datetime.strptime(due,"%Y-%m-%d").date() < today
+            due_color = "#ff8fab" if is_over else "#7b72a8"
+            title_str = t["title"][:40]
+
+            # Row with inline done checkbox
+            rc = st.columns([0.2, 3, 1.5, 1, 1])
+            is_done_chk = t.get("status") == "Done"
+            checked = rc[0].checkbox("", value=is_done_chk, key=f"dash_chk_{task_id}")
+            if checked != is_done_chk:
+                idx = next((j for j,x in enumerate(tasks_data["tasks"]) if x.get("id")==task_id), None)
+                if idx is not None:
+                    tasks_data["tasks"][idx]["status"] = "Done" if checked else "To Do"
+                    save_data("tasks", tasks_data)
+                    st.rerun()
+            rc[1].markdown(f"<span style='font-size:0.88rem;color:#e8deff;font-weight:600;'>{title_str}</span>", unsafe_allow_html=True)
+            rc[2].markdown(f"<span style='font-size:0.78rem;color:#7b72a8;'>{t.get('project','')[:16]}</span>", unsafe_allow_html=True)
+            rc[3].markdown(f"<span class='tag {p_cls}'>{priority}</span>", unsafe_allow_html=True)
+            rc[4].markdown(f"<span style='font-size:0.78rem;color:{due_color};'>{due or '—'}</span>", unsafe_allow_html=True)
+
+        remaining_count = len(active) - len(active_sorted)
+        if remaining_count > 0:
+            st.markdown(f"<div style='text-align:center;margin-top:12px;'><a href='#' style='color:#b79eff;font-size:0.85rem;'>+{remaining_count} more tasks → go to My Tasks</a></div>", unsafe_allow_html=True)
+        st.markdown(f"<div style='text-align:right;margin-top:8px;font-size:0.78rem;color:#7b72a8;'>Showing {len(active_sorted)} of {len(active)} active tasks</div>", unsafe_allow_html=True)
 
     if badge_count:
         st.warning(f"📥 You have **{badge_count}** pending task request(s) in your inbox.")
