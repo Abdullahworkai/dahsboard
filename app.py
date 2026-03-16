@@ -288,35 +288,48 @@ if page == "🎯 Dashboard":
         if not objectives:
             st.info("Add OGSM projects in **My OGSM** to see progress here.")
         else:
-            # Scrollable container showing max 5 visible rows
-            rows_html = ""
-            for obj in objectives:
+            # Show first 5, rest hidden in expander
+            visible = objectives[:5]
+            hidden  = objectives[5:]
+            for obj in visible:
                 obj_tasks = [t for t in tasks if t.get("project") == obj["name"]]
                 done_n  = len([t for t in obj_tasks if t.get("status") == "Done"])
                 total_n = len(obj_tasks)
                 remain  = total_n - done_n
                 pct     = int((done_n / total_n * 100) if total_n else 0)
                 col_color = obj.get("color","#b79eff")
-                bar_filled = f"width:{pct}%;background:linear-gradient(90deg,{col_color}88,{col_color});height:4px;border-radius:999px;"
-                bar_empty  = "width:100%;background:#2e2848;height:4px;border-radius:999px;position:relative;"
-                rows_html += f"""
-                <div style='background:#221e32;border:1px solid #2e2848;border-left:3px solid {col_color};
-                            border-radius:12px;padding:12px 16px;margin-bottom:8px;'>
-                    <div style='display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;'>
-                        <span style='font-weight:700;color:#e8deff;font-size:0.9rem;'>{obj['name']}</span>
-                        <span style='font-size:0.82rem;color:{col_color};font-weight:700;'>{pct}%</span>
-                    </div>
-                    <div style='{bar_empty}'><div style='{bar_filled}'></div></div>
-                    <div style='font-size:0.72rem;color:#7b72a8;margin-top:6px;'>
-                        ✅ {done_n} done &nbsp;·&nbsp; 🔄 {remain} left &nbsp;·&nbsp; {total_n} total
-                    </div>
-                </div>"""
-            # Wrap in scroll div — shows 5 rows (~72px each) then scrolls
-            st.markdown(f"""
-            <div style='max-height:420px;overflow-y:auto;padding-right:4px;
-                        scrollbar-width:thin;scrollbar-color:#2e2848 transparent;'>
-                {rows_html}
-            </div>""", unsafe_allow_html=True)
+                na, nb = st.columns([3, 1])
+                na.markdown(
+                    f"<div style='border-left:3px solid {col_color};padding-left:10px;margin-bottom:2px;'>"
+                    f"<span style='font-weight:700;color:#e8deff;font-size:0.88rem;'>{obj['name']}</span>"
+                    f"<span style='font-size:0.72rem;color:#7b72a8;margin-left:8px;'>✅ {done_n} · 🔄 {remain} · {total_n} total</span>"
+                    f"</div>",
+                    unsafe_allow_html=True
+                )
+                nb.markdown(f"<div style='text-align:right;color:{col_color};font-weight:700;font-size:0.88rem;padding-top:2px;'>{pct}%</div>", unsafe_allow_html=True)
+                st.progress(pct / 100)
+                st.markdown("<div style='margin-bottom:6px;'></div>", unsafe_allow_html=True)
+
+            if hidden:
+                with st.expander(f"+ {len(hidden)} more projects"):
+                    for obj in hidden:
+                        obj_tasks = [t for t in tasks if t.get("project") == obj["name"]]
+                        done_n  = len([t for t in obj_tasks if t.get("status") == "Done"])
+                        total_n = len(obj_tasks)
+                        remain  = total_n - done_n
+                        pct     = int((done_n / total_n * 100) if total_n else 0)
+                        col_color = obj.get("color","#b79eff")
+                        na, nb = st.columns([3, 1])
+                        na.markdown(
+                            f"<div style='border-left:3px solid {col_color};padding-left:10px;margin-bottom:2px;'>"
+                            f"<span style='font-weight:700;color:#e8deff;font-size:0.88rem;'>{obj['name']}</span>"
+                            f"<span style='font-size:0.72rem;color:#7b72a8;margin-left:8px;'>✅ {done_n} · 🔄 {remain} · {total_n} total</span>"
+                            f"</div>",
+                            unsafe_allow_html=True
+                        )
+                        nb.markdown(f"<div style='text-align:right;color:{col_color};font-weight:700;font-size:0.88rem;padding-top:2px;'>{pct}%</div>", unsafe_allow_html=True)
+                        st.progress(pct / 100)
+                        st.markdown("<div style='margin-bottom:6px;'></div>", unsafe_allow_html=True)
 
     with right:
         st.markdown("<h3>Tasks by Project</h3>", unsafe_allow_html=True)
